@@ -4,37 +4,51 @@
 <head>
   <meta charset="UTF-8">
   <style>
+    body {
+      background-color: #2b2b2b; /* Dark background */
+      color: white; /* White text for better contrast */
+      text-align: center; /* Center text on the page */
+    }
+
     .tooltip {
       position: absolute;
-      background-color: white;
-      border: 1px solid black;
+      background-color: #333; /* Dark tooltip background */
+      border: 1px solid white; /* White border */
+      color: white; /* White text inside tooltip */
       padding: 5px;
       font-size: 12px;
       pointer-events: none;
     }
 
     .legend text {
-      font-size: 8px; /* Smaller font size for labels */
+      font-size: 5px;
+      fill: white; /* White text for the legend */
     }
 
     .marker-line {
-      stroke: #333;
+      stroke: #ccc; /* Lighter stroke for marker lines */
       stroke-width: 1;
     }
 
-    .highlighted {
-      stroke: yellow;
-      stroke-width: 3;
+    h1 {
+      font-size: 35px;
+      margin-top: 20px;
+      color: white;
+      font-weight: bold;
     }
+
   </style>
 </head>
 <body>
+
+<h1>Singapore Population Choropleth</h1> <!-- Heading added -->
+
 <svg></svg>
 <div class="tooltip" style="opacity: 0;"></div>
 <script src="https://d3js.org/d3.v7.min.js"></script>
 
 <script>
-let width = 1000, height = 600;
+let width = 600, height = 400; // Canvas size
 
 let svg = d3.select("svg")
     .attr("viewBox", "0 0 " + width + " " + height);
@@ -53,33 +67,45 @@ Promise.all([d3.json("sgmap.json"), d3.csv("population2023.csv")]).then(data => 
     d.popdata = (subzone != undefined) ? parseInt(subzone.Population) : 0;
   });
 
-  // Define custom population intervals for the legend
-  let customThresholds = [0, 10000, 20000, 30000, 40000, 50000, 60000, 70000, 80000, 90000, 100000, 110000, 120000, 130000, 140000];
+  // Define custom population intervals for the legend (last interval combined into one)
+  let customThresholds = [0, 10000, 20000, 30000, 40000, 50000, 60000, 70000, 130000];
 
-  // Define a color scale with more contrasting colors
+  // Define a color scale using red gradients (same scale for map and legend)
   let colorScale = d3.scaleThreshold()
-      .domain(customThresholds)  // Use custom intervals
-      .range(d3.schemeBlues[9]); // A more distinct blue color scale with 9 different shades
+      .domain(customThresholds)
+      .range(d3.schemeReds[9]); // Use red color scheme
 
   // Map and projection
   let projection = d3.geoMercator()
       .center([103.851959, 1.290270])
-      .fitExtent([[20, 20], [980, 580]], data[0]);
+      .fitExtent([[20, 20], [width - 100, height - 50]], data[0]);
 
   let geopath = d3.geoPath().projection(projection);
 
   // Draw districts
-  svg.append("g")
+  let districts = svg.append("g")
       .attr("id", "districts")
       .selectAll("path")
       .data(mapData)
       .enter()
       .append("path")
       .attr("d", geopath)
-      .attr("stroke", "black")
+      .attr("stroke", "white") /* White borders for the map */
       .attr("fill", d => colorScale(d.popdata))
       .on("mouseover", function(event, d) {
-        d3.select(this).attr("stroke", "red").attr("stroke-width", 2);
+        // Highlight the hovered district with a smooth transition
+        d3.select(this).transition()
+            .duration(300)
+            .attr("stroke", "black")
+            .attr("stroke-width", 3);
+        
+        // Slightly dull the other districts (instead of darkening too much, we use .darker(0.3))
+        districts.transition()
+            .duration(300)
+            .attr("fill", function(district) {
+              return (district === d) ? colorScale(d.popdata) : d3.rgb(colorScale(district.popdata)).darker(0.3);
+            });
+
         tooltip.style("opacity", 1)
                .html(`<strong>${d.properties.Name}</strong><br>Population: ${d.popdata}`)
                .style("left", (event.pageX + 10) + "px")
@@ -90,70 +116,79 @@ Promise.all([d3.json("sgmap.json"), d3.csv("population2023.csv")]).then(data => 
                .style("top", (event.pageY - 20) + "px");
       })
       .on("mouseout", function() {
-        d3.select(this).attr("stroke", "black").attr("stroke-width", 1);
+        // Reset all districts and remove highlight with smooth transition
+        districts.transition()
+            .duration(300)
+            .attr("fill", d => colorScale(d.popdata));
+
+        d3.select(this).transition()
+            .duration(300)
+            .attr("stroke", "white")
+            .attr("stroke-width", 1);
+
         tooltip.style("opacity", 0);
       });
 
-  // Create a vertical legend on the bottom-right of the map
+  // Create a vertical legend
   let legend = svg.append("g")
       .attr("class", "legend")
-      .attr("transform", "translate(850, 370)");  // Adjusted y position to fit the legend properly
+      .attr("transform", "translate(500, 250)"); // Positioned lower
 
-  // Draw legend boxes
-  let boxHeight = 15;  // Reduced box height
-  let boxSpacing = 3;  // Reduced spacing between boxes
+  // Draw legend boxes with exact shades for each threshold
+  let boxHeight = 8;  // Smaller box height
+  let boxSpacing = 1;  // Smaller spacing between boxes
   legend.selectAll("rect")
-      .data(customThresholds)
+      .data(customThresholds.slice(0, -1)) // Use thresholds excluding the last interval
       .enter()
       .append("rect")
-      .attr("x", 0)  // Align all boxes to the left of the legend
-      .attr("y", (d, i) => i * (boxHeight + boxSpacing))  // Vertical alignment
-      .attr("width", 20)  // Box width
-      .attr("height", boxHeight)  // Box height
-      .attr("fill", (d, i) => colorScale(d))
-      .on("mouseover", function(event, d) {
-        // Highlight areas that fall into this range when hovering over legend box
+      .attr("x", 0)
+      .attr("y", (d, i) => i * (boxHeight + boxSpacing))
+      .attr("width", 12)  // Smaller box width
+      .attr("height", boxHeight)
+      .attr("fill", d => colorScale(d)) // Use the same color as the map for the legend box
+      .on("mouseover", function(event, threshold) {
+        // Highlight map areas matching the interval with smooth transition
         svg.selectAll("#districts path")
-            .attr("fill", function(district) {
-              return (district.popdata >= d && district.popdata < customThresholds[customThresholds.indexOf(d) + 1]) 
-                  ? "yellow" 
-                  : colorScale(district.popdata);
+            .transition()
+            .duration(300)
+            .attr("fill", d => {
+              let upper = customThresholds[customThresholds.indexOf(threshold) + 1];
+              return (d.popdata >= threshold && d.popdata < upper) 
+                ? "yellow" 
+                : colorScale(d.popdata);
             });
       })
       .on("mouseout", function() {
-        // Reset all areas back to their original colors when mouse leaves the box
+        // Reset map areas with smooth transition
         svg.selectAll("#districts path")
+            .transition()
+            .duration(300)
             .attr("fill", d => colorScale(d.popdata));
       });
 
-  // Add marker lines between the legend boxes
-  legend.selectAll(".marker-line")
-      .data(customThresholds.slice(0, -1))  // Do not draw line after the last box
-      .enter()
-      .append("line")
-      .attr("class", "marker-line")
-      .attr("x1", 20)  // Line position, aligned with box width
-      .attr("y1", (d, i) => (i + 1) * (boxHeight + boxSpacing))  // Line position (bottom of the box)
-      .attr("x2", 30)  // Length of the line
-      .attr("y2", (d, i) => (i + 1) * (boxHeight + boxSpacing))  // Line position (bottom of the box)
-      .style("stroke-dasharray", "2,2");
-
-  // Add labels beside the legend boxes, formatted as "lowerBound-upperBound"
+  // Add labels beside the legend boxes
   legend.selectAll("text")
-      .data(customThresholds.slice(0, -1))  // Exclude last threshold for proper label positioning
+      .data(customThresholds.slice(0, -1))
       .enter()
       .append("text")
-      .attr("x", 30)  // Position the label to the right of the boxes
-      .attr("y", (d, i) => i * (boxHeight + boxSpacing) + boxHeight / 2)  // Vertically center the labels
-      .attr("dy", ".35em")  // Align vertically in the middle
-      .style("font-size", "8px")  // Smaller font size for the labels
-      .style("fill", "#333")
+      .attr("x", 15)
+      .attr("y", (d, i) => i * (boxHeight + boxSpacing) + boxHeight / 2)
+      .attr("dy", ".35em")
+      .style("font-size", "5px")
+      .style("fill", "white") // White text for legend labels
       .text((d, i) => {
         let nextThreshold = customThresholds[i + 1];
-        return nextThreshold 
-          ? `${d} - ${nextThreshold}`
-          : `${d}+`;  // For the last interval, show "d+"
+        return nextThreshold ? `${d} - ${nextThreshold}` : `${d}+`;
       });
+
+  // Add legend title
+  legend.append("text")
+      .attr("x", 0)
+      .attr("y", -10)
+      .style("font-size", "7px")
+      .style("font-weight", "bold")
+      .style("fill", "white") // White text for legend title
+      .text("Population");
 });
 </script>
 
